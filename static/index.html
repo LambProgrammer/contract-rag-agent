@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contract RAG Agent — 智能合同审查助手</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f5f5f5; height: 100vh; display: flex; }
+.sidebar { width: 200px; background: #1a1a2e; color: #fff; padding: 20px 0; display: flex; flex-direction: column; flex-shrink: 0; }
+.sidebar h2 { font-size: 14px; padding: 0 16px 16px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+.sidebar button { display: block; width: 100%; padding: 12px 16px; background: none; border: none; color: #ccc; text-align: left; font-size: 14px; cursor: pointer; transition: background .2s; }
+.sidebar button:hover { background: #16213e; color: #fff; }
+.main { flex: 1; display: flex; flex-direction: column; max-width: calc(100vw - 200px); }
+.header { background: #fff; padding: 16px 24px; border-bottom: 1px solid #e0e0e0; font-size: 16px; font-weight: 600; color: #333; }
+.contract-bar { background: #e8f0fe; padding: 10px 24px; border-bottom: 1px solid #d2e3fc; font-size: 13px; color: #333; }
+.contract-bar code { background: #d2e3fc; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+.chat { flex: 1; overflow-y: auto; padding: 24px; }
+.chat .msg { margin-bottom: 16px; max-width: 80%; animation: fadeIn .3s; }
+.chat .msg.system { margin: 0 auto 24px; max-width: 90%; background: #e8f4fd; border-radius: 12px; padding: 20px 24px; color: #333; font-size: 14px; line-height: 1.8; }
+.chat .msg.system h3 { margin-bottom: 12px; color: #1a73e8; }
+.chat .msg.system ul { padding-left: 20px; }
+.chat .msg.assistant { background: #fff; border-radius: 12px; padding: 14px 18px; color: #333; font-size: 14px; line-height: 1.7; box-shadow: 0 1px 3px rgba(0,0,0,.08); white-space: pre-wrap; }
+.chat .msg.assistant .sources { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; font-size: 12px; color: #888; }
+.chat .msg.assistant .sources .src { background: #f0f4ff; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+.chat .msg.user { background: #1a73e8; color: #fff; border-radius: 12px; padding: 10px 16px; font-size: 14px; margin-left: auto; }
+.chat .msg.error { background: #fff0f0; color: #c62828; border-radius: 10px; padding: 10px 16px; font-size: 13px; margin: 0 auto; }
+.input-area { background: #fff; padding: 16px 24px; border-top: 1px solid #e0e0e0; }
+.input-area textarea { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; resize: none; min-height: 44px; max-height: 120px; outline: none; font-family: inherit; }
+.input-area textarea:focus { border-color: #1a73e8; }
+.input-area .row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+.input-area .row input { flex: 1; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; outline: none; }
+.input-area .row button { padding: 8px 20px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; transition: opacity .2s; }
+.input-area .row button:disabled { opacity: .5; cursor: default; }
+.btn-primary { background: #1a73e8; color: #fff; }
+.btn-secondary { background: #f0f0f0; color: #333; }
+.modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,.4); z-index: 100; justify-content: center; align-items: center; }
+.modal-overlay.active { display: flex; }
+.modal { background: #fff; border-radius: 12px; padding: 24px; width: 90%; max-width: 700px; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,.15); }
+.modal h3 { margin-bottom: 16px; font-size: 16px; }
+.modal input, .modal select { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; margin-bottom: 10px; outline: none; }
+.modal button { padding: 10px 20px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; margin-right: 8px; }
+.modal .result { margin-top: 16px; }
+.stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.stats .stat { background: #f0f4ff; border-radius: 8px; padding: 12px 16px; text-align: center; min-width: 80px; }
+.stats .stat .num { font-size: 24px; font-weight: 700; color: #1a73e8; }
+.stats .stat .label { font-size: 12px; color: #666; margin-top: 4px; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+table th, table td { border: 1px solid #eee; padding: 8px 10px; text-align: left; }
+table th { background: #f8f9fa; font-weight: 600; }
+.sev { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+.sev.critical { background: #c62828; color: #fff; }
+.sev.high { background: #e65100; color: #fff; }
+.sev.medium { background: #f9a825; color: #333; }
+.sev.low { background: #e0e0e0; color: #555; }
+.diff-item { background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+.diff-item .header { font-size: 14px; font-weight: 600; margin-bottom: 8px; cursor: pointer; padding: 0; border: none; background: none; }
+.diff-item .body { font-size: 13px; line-height: 1.6; white-space: pre-wrap; display: none; }
+.diff-item .body.open { display: block; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 6px; }
+.tag.regex { background: #e8f5e9; color: #2e7d32; }
+.tag.semantic { background: #fff3e0; color: #e65100; }
+.progress-bar { width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; margin-top: 8px; }
+.progress-bar .fill { height: 100%; background: #1a73e8; border-radius: 4px; transition: width .3s; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.cursor { display: inline-block; width: 2px; height: 16px; background: #1a73e8; animation: blink .6s infinite; vertical-align: text-bottom; }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <h2>功能</h2>
+  <button onclick="openModal('upload')">📁 上传合同</button>
+  <button onclick="openModal('risk')">🔍 风险检测</button>
+  <button onclick="openModal('compare')">⚖️ 合同比对</button>
+  <button onclick="openModal('task')">📋 任务查询</button>
+</div>
+
+<div class="main">
+  <div class="header">Contract RAG Agent — 智能合同审查助手</div>
+  <div class="contract-bar" id="contractBar" style="display:none"></div>
+  <div class="chat" id="chat">
+    <div class="msg system">
+      <h3>👋 你好！我是您的合同审查助手</h3>
+      <p>本助手基于 RAG（检索增强生成）技术构建，能够基于已上传的合同条款回答您的问题。</p>
+      <br>
+      <p><strong>我能帮您：</strong></p>
+      <ul>
+        <li>上传并自动解析 PDF / Word 合同文件</li>
+        <li>基于合同条款回答您的法律问题（答案带原文引用）</li>
+        <li>自动检测合同中的潜在风险条款并给出修改建议</li>
+        <li>对比两份合同的条款差异，评估修改风险</li>
+      </ul>
+      <br>
+      <p>请先通过左侧「📁 上传合同」上传一份合同文件，或直接输入问题开始对话。</p>
+      <br>
+      <div style="background:#fafafa;border:1px solid #e8e8e8;border-radius:8px;padding:14px 18px;font-size:12px;color:#777;line-height:1.8">
+        <strong style="color:#555">📋 使用须知</strong><br>
+        1. 本助手专注于合同审查与条款分析，<strong>不支持通用闲聊</strong>。与合同无关的提问可能无法获得理想回复。<br>
+        2. 风险检测与合同比对每次返回独立的会话 ID，提问时请围绕<strong>当前操作</strong>的结果进行追问，<strong>不建议在一次对话中穿插追问不同功能的检测/比对结果</strong>，以免上下文错乱。<br>
+        3. 如发现回答未按预期引用合同条款，请尝试更换提问角度或检查合同是否已上传并解析完成。
+      </div>
+    </div>
+  </div>
+  <div class="input-area">
+    <textarea id="queryInput" placeholder="输入您的问题..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendQuery();}"></textarea>
+    <div class="row">
+      <select id="qaDocSelect" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:12px;flex:1"><option value="">— 全部合同 —</option></select>
+      <input type="text" id="sessionId" placeholder="Session ID（可选）">
+      <button class="btn-secondary" onclick="newSession()">新会话</button>
+      <button class="btn-primary" id="sendBtn" onclick="sendQuery()">发送</button>
+    </div>
+  </div>
+</div>
+
+<!-- Upload Modal -->
+<div class="modal-overlay" id="modal-upload">
+  <div class="modal">
+    <h3>📁 上传合同文件</h3>
+    <input type="file" id="fileInput" accept=".pdf,.docx,.doc">
+    <div><button class="btn-primary" onclick="uploadFile()">上传</button>
+    <button class="btn-secondary" onclick="closeModal('upload')">关闭</button></div>
+    <div class="result" id="uploadResult"></div>
+  </div>
+</div>
+
+<!-- Risk Modal -->
+<div class="modal-overlay" id="modal-risk">
+  <div class="modal">
+    <h3>🔍 风险条款检测</h3>
+    <select id="riskDocSelect"><option value="">— 请选择要检测的合同 —</option></select>
+    <div><button class="btn-primary" onclick="detectRisk()">开始检测</button>
+    <button class="btn-secondary" onclick="closeModal('risk')">关闭</button></div>
+    <div class="result" id="riskResult"></div>
+  </div>
+</div>
+
+<!-- Compare Modal -->
+<div class="modal-overlay" id="modal-compare">
+  <div class="modal">
+    <h3>⚖️ 跨合同比对</h3>
+    <select id="compareDocSelectA"><option value="">— 选择合同 A —</option></select>
+    <select id="compareDocSelectB"><option value="">— 选择合同 B —</option></select>
+    <div><button class="btn-primary" onclick="compareDocs()">开始比对</button>
+    <button class="btn-secondary" onclick="closeModal('compare')">关闭</button></div>
+    <div class="result" id="compareResult"></div>
+  </div>
+</div>
+
+<!-- Task Modal -->
+<div class="modal-overlay" id="modal-task">
+  <div class="modal">
+    <h3>📋 任务进度查询</h3>
+    <input type="text" id="taskIdInput" placeholder="输入任务 ID（task_id）">
+    <div><button class="btn-primary" onclick="queryTask()">查询</button>
+    <button class="btn-secondary" onclick="closeModal('task')">关闭</button></div>
+    <div class="result" id="taskResult"></div>
+  </div>
+</div>
+
+<script>
+const BASE = '/api/v1';
+// 从 localStorage 恢复已上传合同列表（刷新页面不丢失）
+const uploadedContracts = JSON.parse(localStorage.getItem('contracts') || '[]');
+
+function saveContracts() {
+  localStorage.setItem('contracts', JSON.stringify(uploadedContracts));
+}
+
+// 页面加载时恢复合同栏
+if (uploadedContracts.length) { updateContractBar(); }
+
+function refreshDropdowns() {
+  const riskSel = document.getElementById('riskDocSelect');
+  const cmpA = document.getElementById('compareDocSelectA');
+  const cmpB = document.getElementById('compareDocSelectB');
+  const qaSel = document.getElementById('qaDocSelect');
+  const opts = uploadedContracts.map((c, i) =>
+    `<option value="${i}">${c.name}</option>`
+  ).join('');
+  const def = '<option value="">— 请选择 —</option>';
+  if (riskSel) riskSel.innerHTML = def + opts;
+  if (cmpA) cmpA.innerHTML = def + opts;
+  if (cmpB) cmpB.innerHTML = def + opts;
+  if (qaSel) qaSel.innerHTML = '<option value="">— 全部合同 —</option>' + opts;
+}
+
+function updateContractBar() {
+  const bar = document.getElementById('contractBar');
+  if (!uploadedContracts.length) { bar.style.display = 'none'; refreshDropdowns(); return; }
+  let html = '';
+  for (let i = 0; i < uploadedContracts.length; i++) {
+    const c = uploadedContracts[i];
+    html += `<span style="margin-right:16px">📄 ${c.name} <code>${c.doc_id.slice(0,8)}...</code> <span style="cursor:pointer;color:#c62828;font-weight:bold" onclick="removeContract(${i})" title="移除">✕</span></span>`;
+  }
+  bar.innerHTML = html;
+  bar.style.display = 'block';
+  refreshDropdowns();
+}
+
+function removeContract(idx) {
+  const c = uploadedContracts[idx];
+  uploadedContracts.splice(idx, 1);
+  saveContracts();
+  updateContractBar();
+  addChatMsg('system', `🗑️ 已移除合同「${c.name}」`);
+}
+
+function getSelectedContract(selectId) {
+  const sel = document.getElementById(selectId);
+  const idx = sel.value;
+  return (idx !== '' && idx !== null) ? uploadedContracts[parseInt(idx)] : null;
+}
+
+function openModal(name) {
+  refreshDropdowns();
+  document.getElementById('modal-' + name).classList.add('active');
+}
+
+function closeModal(name) {
+  document.getElementById('modal-' + name).classList.remove('active');
+}
+
+// 恢复上次的 session_id
+const savedSid = localStorage.getItem('sessionId');
+if (savedSid) document.getElementById('sessionId').value = savedSid;
+
+function newSession() {
+  const sid = crypto.randomUUID();
+  document.getElementById('sessionId').value = sid;
+  localStorage.setItem('sessionId', sid);
+}
+
+// ============================================================
+// Upload
+// ============================================================
+async function uploadFile() {
+  const fileInput = document.getElementById('fileInput');
+  const resultDiv = document.getElementById('uploadResult');
+  if (!fileInput.files.length) { resultDiv.innerHTML = '<p style="color:red">请选择文件</p>'; return; }
+  const form = new FormData();
+  form.append('file', fileInput.files[0]);
+  resultDiv.innerHTML = '<p>上传中...</p>';
+  try {
+    const r = await fetch(BASE + '/upload', { method: 'POST', body: form });
+    const d = await r.json();
+    resultDiv.innerHTML = `<p style="color:green">✅ 上传成功</p>
+      <p>文档 ID: <code>${d.doc_id}</code></p>
+      <p>任务 ID: <code>${d.task_id}</code></p>
+      <p>${d.message}</p>`;
+    // 添加到已上传列表
+    const fname = fileInput.files[0].name;
+    uploadedContracts.push({ name: fname, doc_id: d.doc_id });
+    saveContracts();
+    updateContractBar();
+    addChatMsg('system', `📁 合同「${fname}」已上传，正在解析中...`);
+    // 自动轮询解析进度
+    const progressMsg = addChatMsg('system', '⏳ 等待解析...');
+    pollTaskProgress(d.task_id, progressMsg, fname);
+  } catch(e) {
+    resultDiv.innerHTML = `<p style="color:red">上传失败: ${e.message}</p>`;
+  }
+}
+
+async function pollTaskProgress(taskId, msgDiv, fname) {
+  const stages = {
+    '解析文档': '📖 正在解析文档...',
+    '分块': '✂️ 正在切分条款...',
+    '加载 Embedding 模型': '🧠 正在加载 AI 模型...',
+    '向量化': '🔢 正在生成语义向量...',
+    '生成稀疏向量': '🔤 正在提取关键词...',
+    '写入 Qdrant': '💾 正在存入向量库...',
+  };
+  let lastProgress = 0;
+  const poll = async () => {
+    try {
+      const r = await fetch(BASE + '/tasks/' + taskId);
+      const d = await r.json();
+      if (d.status === 'completed') {
+        msgDiv.innerHTML = `✅ 合同「${fname}」解析完成！共 ${d.progress || 0}% 处理完毕。现在可以提问了。`;
+        return;
+      }
+      if (d.status === 'failed') {
+        msgDiv.innerHTML = `❌ 合同「${fname}」解析失败：${d.error_message || '未知错误'}`;
+        return;
+      }
+      // 显示进度和阶段
+      const pct = d.progress || 0;
+      if (pct > lastProgress) lastProgress = pct;
+      let stageText = '';
+      if (d.stage) {
+        stageText = stages[d.stage] || `🔄 ${d.stage}`;
+      }
+      msgDiv.innerHTML = `⏳ 合同「${fname}」解析中... ${stageText} (${lastProgress}%)
+        <div class="progress-bar"><div class="fill" style="width:${lastProgress}%"></div></div>`;
+      setTimeout(poll, 2000);
+    } catch(e) {
+      setTimeout(poll, 3000);
+    }
+  };
+  poll();
+}
+
+// ============================================================
+// QA (SSE)
+// ============================================================
+async function sendQuery() {
+  const input = document.getElementById('queryInput');
+  const btn = document.getElementById('sendBtn');
+  const query = input.value.trim();
+  if (!query) return;
+  const sid = document.getElementById('sessionId').value || crypto.randomUUID();
+  if (!document.getElementById('sessionId').value) document.getElementById('sessionId').value = sid;
+  localStorage.setItem('sessionId', document.getElementById('sessionId').value);
+
+  addChatMsg('user', query);
+  input.value = '';
+  btn.disabled = true;
+
+  const msgDiv = addChatMsg('assistant', '');
+  const cursor = document.createElement('span');
+  cursor.className = 'cursor';
+  msgDiv.appendChild(cursor);
+
+  let full = '';
+  try {
+    // 读取合同选择
+    const qaSel = document.getElementById('qaDocSelect');
+    const qaContract = (qaSel && qaSel.value !== '') ? uploadedContracts[parseInt(qaSel.value)] : null;
+    const doc_id = qaContract ? qaContract.doc_id : null;
+
+    const r = await fetch(BASE + '/qa', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, session_id: sid, doc_id }),
+    });
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const d = JSON.parse(line.slice(6));
+          if (d.content) {
+            full += d.content;
+            const textNode = document.createTextNode(d.content);
+            msgDiv.insertBefore(textNode, cursor);
+          }
+          if (d.sources) {
+            cursor.remove();
+            let srcHtml = '<div class="sources"><strong>📎 引用来源：</strong>';
+            for (const s of d.sources) {
+              srcHtml += `<div class="src"><strong>${s.clause_ref}</strong> (score: ${s.score})<br>${s.text_snippet}</div>`;
+            }
+            srcHtml += '</div>';
+            msgDiv.insertAdjacentHTML('beforeend', srcHtml);
+          }
+        } catch(e) {}
+      }
+    }
+  } catch(e) {
+    cursor.remove();
+    addChatMsg('error', `请求失败: ${e.message}`);
+  }
+  btn.disabled = false;
+}
+
+function addChatMsg(role, content) {
+  const chat = document.getElementById('chat');
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.innerHTML = content;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  return div;
+}
+
+// ============================================================
+// Risk
+// ============================================================
+async function detectRisk() {
+  const c = getSelectedContract('riskDocSelect');
+  if (!c) { addChatMsg('system', '⚠️ 请先在风险检测窗口中选择一份合同'); return; }
+  closeModal('risk');
+  const msgDiv = addChatMsg('system', `🔍 已提交「${c.name}」的风险检测任务，正在后台处理...`);
+  try {
+    const r = await fetch(BASE + '/risk/detect?doc_id=' + encodeURIComponent(c.doc_id), { method: 'POST' });
+    const d = await r.json();
+    if (d.task_id) {
+      // 异步模式：轮询 task 进度
+      pollRiskTask(d.task_id, msgDiv, c);
+    } else {
+      msgDiv.innerHTML = `❌ 检测提交失败`;
+    }
+  } catch(e) {
+    msgDiv.innerHTML = `❌ 检测失败: ${e.message}`;
+  }
+}
+
+async function pollRiskTask(taskId, msgDiv, contract) {
+  const sevMap = {critical:'严重',high:'高',medium:'中',low:'低'};
+  const verdictMap = {confirmed:'确认风险',false_alarm:'误报',adjusted:'已调整'};
+  const poll = async () => {
+    try {
+      const r = await fetch(BASE + '/tasks/' + taskId);
+      const d = await r.json();
+      if (d.status === 'completed') {
+        if (d.result && d.result.risks) {
+          const rd = d.result;
+          let html = `<strong>🔍 风险检测结果：${contract.name}</strong><br>`;
+          html += `规则: ${rd.rules_loaded||'?'} | 关键词命中: ${rd.keyword_hits||'?'} | 确认风险: ${rd.verified_risks||'?'} | 误报过滤: ${rd.false_alarms_filtered||'?'}`;
+          if (rd.risks.length) {
+            html += '<br><table style="font-size:12px;margin-top:8px"><tr><th>规则</th><th>严重程度</th><th>条款</th><th>判定</th><th>分析</th></tr>';
+            for (const r of rd.risks) {
+              html += `<tr><td>${r.rule_name}</td><td><span class="sev ${r.severity}">${sevMap[r.severity]||r.severity}</span></td><td>${r.clause_ref}</td><td>${verdictMap[r.verdict]||r.verdict}</td><td style="font-size:11px;max-width:300px;white-space:pre-wrap">${r.analysis}</td></tr>`;
+            }
+            html += '</table>';
+          } else {
+            html += '<br>🎉 未发现风险条款';
+          }
+          if (d.result.session_id) { document.getElementById('sessionId').value = d.result.session_id; }
+          msgDiv.innerHTML = html;
+        } else {
+          msgDiv.innerHTML = `✅ 风险检测完成，但结果数据异常`;
+        }
+        return;
+      }
+      if (d.status === 'failed') {
+        msgDiv.innerHTML = `❌ 风险检测失败：${d.error_message || '未知错误'}`;
+        return;
+      }
+      msgDiv.innerHTML = `🔍 正在检测「${contract.name}」的风险条款... (${d.progress||0}%)`;
+      setTimeout(poll, 2000);
+    } catch(e) {
+      setTimeout(poll, 3000);
+    }
+  };
+  poll();
+}
+
+// ============================================================
+// Compare
+// ============================================================
+async function compareDocs() {
+  const ca = getSelectedContract('compareDocSelectA');
+  const cb = getSelectedContract('compareDocSelectB');
+  if (!ca || !cb) { addChatMsg('system', '⚠️ 请在合同比对窗口中选择两份合同'); return; }
+  if (ca.doc_id === cb.doc_id) { addChatMsg('system', '⚠️ 请选择两份不同的合同进行比对'); return; }
+  closeModal('compare');
+  const msgDiv = addChatMsg('system', `⚖️ 已提交「${ca.name}」vs「${cb.name}」的比对任务，正在后台处理...`);
+  try {
+    const r = await fetch(BASE + '/compare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doc_ids: [ca.doc_id, cb.doc_id] }),
+    });
+    const d = await r.json();
+    if (d.task_id) {
+      pollCompareTask(d.task_id, msgDiv, ca, cb);
+    } else {
+      msgDiv.innerHTML = `❌ 比对提交失败`;
+    }
+  } catch(e) {
+    msgDiv.innerHTML = `❌ 比对失败: ${e.message}`;
+  }
+}
+
+async function pollCompareTask(taskId, msgDiv, ca, cb) {
+  const statLabels = {total_aligned:'对齐条款',identical:'完全一致',with_differences:'存在差异',only_in_a:'仅A有',only_in_b:'仅B有'};
+  const poll = async () => {
+    try {
+      const r = await fetch(BASE + '/tasks/' + taskId);
+      const d = await r.json();
+      if (d.status === 'completed') {
+        if (d.result && d.result.stats) {
+          const rd = d.result;
+          let html = `<strong>⚖️ 比对结果：${ca.name} vs ${cb.name}</strong><br>`;
+          html += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0">`;
+          ['total_aligned','identical','with_differences','only_in_a','only_in_b'].forEach(k => {
+            html += `<span style="background:#f0f4ff;border-radius:6px;padding:6px 10px;font-size:12px">${statLabels[k]}: <b>${rd.stats[k]}</b></span>`;
+          });
+          html += `</div>`;
+          for (const diff of (rd.differences||[])) {
+            const tag = diff.align_method === 'regex' ? '<span class="tag regex">编号匹配</span>' : '<span class="tag semantic">语义对齐</span>';
+            html += `<div class="diff-item">
+              <div class="header" onclick="this.nextElementSibling.classList.toggle('open')" style="padding:6px 0;border:none;background:none;font-size:13px">
+                ${diff.is_identical ? '✅' : '⚠️'} ${diff.clause_ref_a} vs ${diff.clause_ref_b} ${tag}
+                ${diff.is_identical ? '' : '<span style="color:#e65100">差异</span>'}
+              </div>
+              <div class="body${diff.is_identical?'':''}">${diff.llm_analysis}</div>
+            </div>`;
+          }
+          if (d.result.session_id) { document.getElementById('sessionId').value = d.result.session_id; }
+          msgDiv.innerHTML = html;
+        } else {
+          msgDiv.innerHTML = `✅ 比对完成，但结果数据异常`;
+        }
+        return;
+      }
+      if (d.status === 'failed') {
+        msgDiv.innerHTML = `❌ 比对失败：${d.error_message || '未知错误'}`;
+        return;
+      }
+      msgDiv.innerHTML = `⚖️ 正在比对「${ca.name}」vs「${cb.name}」... (${d.progress||0}%)`;
+      setTimeout(poll, 2000);
+    } catch(e) {
+      setTimeout(poll, 3000);
+    }
+  };
+  poll();
+}
+
+// ============================================================
+// Task
+// ============================================================
+async function queryTask() {
+  const tid = document.getElementById('taskIdInput').value.trim();
+  const resultDiv = document.getElementById('taskResult');
+  if (!tid) { resultDiv.innerHTML = '<p style="color:red">请输入 task_id</p>'; return; }
+  try {
+    const r = await fetch(BASE + '/tasks/' + tid);
+    const d = await r.json();
+    resultDiv.innerHTML = `<p>状态: <strong>${d.status}</strong> | 进度: ${d.progress}%</p>
+      <div class="progress-bar"><div class="fill" style="width:${d.progress}%"></div></div>
+      ${d.error_message ? '<p style="color:red">' + d.error_message + '</p>' : ''}`;
+  } catch(e) {
+    resultDiv.innerHTML = `<p style="color:red">查询失败: ${e.message}</p>`;
+  }
+}
+</script>
+</body>
+</html>

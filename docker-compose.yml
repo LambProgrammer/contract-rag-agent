@@ -1,0 +1,149 @@
+# ============================================================
+# Contract RAG Agent — Docker Compose 编排
+#
+# 基础启动（不含 LangFuse）：
+#   docker compose up -d
+#
+# 包含 LangFuse 可观测性：
+#   docker compose --profile langfuse up -d
+#
+# 停止所有服务：
+#   docker compose down -v
+# ============================================================
+
+
+services:
+  # ============================================================
+  # 1. FastAPI 应用服务
+  # ============================================================
+  app:
+    build: .
+    container_name: contract-rag-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # 容器内连接，覆盖 .env 中的 localhost
+      - POSTGRES_HOST=postgres
+      - REDIS_HOST=redis
+      - QDRANT_HOST=qdrant
+      - LANGFUSE_HOST=http://langfuse-server:3000
+    volumes:
+      - ./uploads:/app/uploads
+      - ./src:/app/src          # 开发期热重载，生产部署应去掉
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    command: uv run uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+  # ============================================================
+  # 2. Celery Worker 服务
+  # ============================================================
+  worker:
+    build: .
+    container_name: contract-rag-worker
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - REDIS_HOST=redis
+      - QDRANT_HOST=qdrant
+      - LANGFUSE_HOST=http://langfuse-server:3000
+    volumes:
+      - ./uploads:/app/uploads
+      - ./src:/app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    command: uv run celery -A src.tasks.celery_app worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-4}
+    restart: unless-stopped
+
+  # ============================================================
+  # 3. PostgreSQL 数据库
+  # ============================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: contract-rag-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-contract_rag}
+    ports:
+      - "5432:5432"             # 开发调试用，方便本地工具直连
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-contract_rag}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================================
+  # 4. Redis 服务
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: contract-rag-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================================
+  # 5. Qdrant 向量数据库
+  # ============================================================
+  qdrant:
+    image: qdrant/qdrant:v1.12.0
+    container_name: contract-rag-qdrant
+    ports:
+      - "6333:6333"             # REST API
+      - "6334:6334"             # gRPC（备用）
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  # ============================================================
+  # 6. LangFuse 可观测性（自托管，可选）
+  # ============================================================
+  langfuse-server:
+    image: langfuse/langfuse:latest
+    container_name: contract-rag-langfuse
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-contract_rag}_langfuse
+      - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET:-change-me-in-production}
+      - NEXTAUTH_URL=http://localhost:3000
+      - SALT=${LANGFUSE_SALT:-change-me-in-production}
+      - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY:-change-me-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - langfuse                # 需通过 docker compose --profile langfuse up 启动
+    restart: unless-stopped
+
+# ============================================================
+# 持久化存储卷
+# ============================================================
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:

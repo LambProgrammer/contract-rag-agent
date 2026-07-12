@@ -1,0 +1,45 @@
+# Git metadata (避免携带历史记录)
+.git/
+.gitignore
+
+# Environment secrets (绝对禁止进入镜像)
+.env
+.env.local
+.env.*.local
+
+# Python cache (镜像内不需要，会重新生成)
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Local development data (与镜像无关)
+uploads/
+logs/
+*.log
+*.db
+*.sqlite3
+
+# Testing & Linting caches (镜像内不需要)
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Documentation & CI (仅供源码阅读，运行时不需要)
+docs/
+README.md
+.pre-commit-config.yaml
+
+# Docker files (避免嵌套复制)
+Dockerfile
+.dockerignore
+docker-compose.yml

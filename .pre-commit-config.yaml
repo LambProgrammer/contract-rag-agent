@@ -1,0 +1,78 @@
+# ============================================================
+# pre-commit 配置文件
+# 
+# 作用：在每次 git commit 时自动触发代码质量检查
+# 安装：uv run pre-commit install
+# 触发：git commit 时自动运行，也可手动运行 uv run pre-commit run --all-files
+# ============================================================
+
+repos:
+  # ============================================================
+  # Repository 1: Ruff (Python 代码检查与格式化)
+  # ============================================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # 版本号（建议使用最新稳定版，可通过访问 GitHub Releases 查看）
+    # 注意：这是 pre-commit 拉取的工具版本，与 pyproject.toml 中的 Ruff 版本相互独立
+    rev: v0.8.0
+    hooks:
+      # ----------------------------------------------------------
+      # Hook 1: Ruff 代码检查（自动修复可修复的问题）
+      # ----------------------------------------------------------
+      - id: ruff
+        args:
+          - --fix                        # 自动修复可修复的问题（如删除未使用的导入）
+          - --exit-non-zero-on-fix       # 如果有文件被修改，则退出码为非 0，阻止提交
+          # - --config=pyproject.toml    # 指定配置文件（默认从 pyproject.toml 读取）
+        # 可选：指定检查范围
+        # files: \.py$
+
+      # ----------------------------------------------------------
+      # Hook 2: Ruff 代码格式化（替代 Black）
+      # ----------------------------------------------------------
+      - id: ruff-format
+        # 默认格式化所有 Python 文件
+        # 可选参数示例：
+        # args: [--line-length, "100"]   # 覆盖 pyproject.toml 中的行长度设置
+
+# ============================================================
+# 以下是常见额外 Hook 示例（本项目中暂未启用）
+# ============================================================
+
+  # 示例 1：检查是否添加了大型文件（防止误提交大文件）
+  # - repo: https://github.com/pre-commit/pre-commit-hooks
+  #   rev: v4.5.0
+  #   hooks:
+  #     - id: check-added-large-files
+  #       args: ['--maxkb=500']
+
+  # 示例 2：检查是否包含调试语句（如 ipdb、pdb）
+  # - repo: https://github.com/pre-commit/pre-commit-hooks
+  #   rev: v4.5.0
+  #   hooks:
+  #     - id: debug-statements
+
+  # 示例 3：检查 YAML 文件语法（防止格式错误）
+  # - repo: https://github.com/pre-commit/pre-commit-hooks
+  #   rev: v4.5.0
+  #   hooks:
+  #     - id: check-yaml
+
+# ============================================================
+# 常用命令速查
+# ============================================================
+# 
+# 安装钩子到当前仓库：
+#   uv run pre-commit install
+#
+# 手动运行所有钩子（不提交时检查全部文件）：
+#   uv run pre-commit run --all-files
+#
+# 手动运行特定钩子：
+#   uv run pre-commit run ruff --all-files
+#
+# 跳过钩子提交（紧急情况）：
+#   git commit -m "message" --no-verify
+#
+# 更新钩子到最新版本（需修改 rev 字段后执行）：
+#   uv run pre-commit autoupdate
+# ============================================================
