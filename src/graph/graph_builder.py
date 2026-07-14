@@ -35,6 +35,7 @@ M3 的图结构（示例，届时实现）：
 
 import logging
 
+from langfuse import observe
 from langgraph.graph import END, START, StateGraph
 from pydantic import SecretStr
 
@@ -47,6 +48,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # 节点 0：查询改写（rewrite_node）— M3 新增
 # ============================================================
+@observe(name="rewrite-node", as_type="chain")
 def _rewrite_node(state: RAGState) -> dict:
     """
     查询改写节点 — 将口语化提问规范化为适合检索的标准表述，
@@ -113,6 +115,7 @@ def _rewrite_node(state: RAGState) -> dict:
 # ============================================================
 # 节点 1：检索（retrieve_node）
 # ============================================================
+@observe(name="retrieve-node", as_type="retriever")
 def _retrieve_node(state: RAGState) -> dict:
     """
     检索节点 — 将用户提问转为向量，在 Qdrant 中搜索最相关条款。
@@ -177,6 +180,7 @@ def _retrieve_node(state: RAGState) -> dict:
 # ============================================================
 # 节点 2：重排序（rerank_node）— M3 新增
 # ============================================================
+@observe(name="rerank-node", as_type="chain")
 def _rerank_node(state: RAGState) -> dict:
     """
     重排序节点 — 用 CrossEncoder 对检索召回结果精排。
@@ -214,6 +218,7 @@ def _rerank_node(state: RAGState) -> dict:
 # ============================================================
 # 节点 3：门控检查（check_confidence_node）— M3 新增
 # ============================================================
+@observe(name="check-node", as_type="chain")
 def _check_confidence_node(state: RAGState) -> dict:
     """
     门控检查节点 — 唯一职责：docs 为空时直接返回 fallback。
@@ -260,6 +265,7 @@ def _should_fallback(state: RAGState) -> str:
 # ============================================================
 # 节点 4：生成（generate_node）
 # ============================================================
+@observe(name="generate-node", as_type="generation")
 def _generate_node(state: RAGState) -> dict:
     """
     生成节点 — 将检索到的条款原文 + 用户问题组装为 prompt，调用 LLM 生成答案。

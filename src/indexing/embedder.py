@@ -35,6 +35,7 @@ import time
 from typing import List
 
 import numpy as np
+from langfuse import observe
 
 from src.core.config import settings
 
@@ -139,6 +140,7 @@ class BGEEmbedder:
 
         return self._model
 
+    @observe(name="embed-documents", as_type="embedding")
     def encode(self, texts: List[str], show_progress: bool = False) -> np.ndarray:
         """
         将文本列表批量转为向量。

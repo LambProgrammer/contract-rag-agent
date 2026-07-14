@@ -7,11 +7,10 @@ FastAPI 应用入口
     而是负责接收请求、参数校验、提交异步任务、返回结果。
 
 生命周期（lifespan）：
-    启动时 → 验证数据库可连接、确保 Qdrant 可达
-    运行中 → 接收 HTTP 请求，路由到对应的处理函数
-    关闭时 → 断开数据库连接池，清理临时文件
+    启动时 → 初始化 LangFuse 可观测性 → 创建共享 Redis/Qdrant 连接 → 启动服务
+    关闭时 → 刷新 LangFuse 缓冲区 → 关闭 Redis 连接池 → 关闭 Qdrant 连接
 
-路由挂载策略（为 M2/M3 预留扩展点）：
+路由挂载策略：
     - /api/v1/*    业务路由（upload、qa、compare 等）
     - /health       健康检查（容器编排用）
     - /docs         Swagger UI（开发调试用）
@@ -24,30 +23,42 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+import redis as redis_lib
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-
-logger = logging.getLogger(__name__)
+from qdrant_client import QdrantClient
 
 from src.core.config import settings  # noqa: E402
+
+# 项目日志输出到 stdout（uvicorn 只给自己的 logger 加了 handler）
+_log_handler = logging.StreamHandler()
+_log_handler.setFormatter(logging.Formatter("[%(name)s] %(levelname)s: %(message)s"))
+_log_pkg = logging.getLogger("src")
+_log_pkg.addHandler(_log_handler)
+_log_pkg.setLevel(getattr(logging, settings.app_log_level, logging.INFO))
+_log_pkg.propagate = False  # 不重复输出到 root handler
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================
 # 生命周期管理
 # ============================================================
-# lifespan 是 FastAPI 推荐的启动/关闭钩子，替代已废弃的 on_event("startup")
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     FastAPI 生命周期上下文管理器。
 
     启动阶段（yield 之前）：
-        - 验证配置是否加载正确
-        - 打印服务信息（用于确认容器内环境变量是否正确覆盖）
+        - 打印服务配置信息
+        - 初始化 LangFuse 可观测性（失败不影响主业务）
+        - 创建共享 Redis 连接（挂载到 app.state.redis）
+        - 创建共享 Qdrant 客户端（挂载到 app.state.qdrant）
 
     关闭阶段（yield 之后）：
-        - 清理数据库连接池（M1 之后实现）
-        - 清理临时文件
+        - 刷新 LangFuse 缓冲区
+        - 关闭 Redis 连接池
+        - 关闭 Qdrant 客户端
     """
     # ============================================================
     # 启动阶段
@@ -62,14 +73,65 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"[APP] 上传目录: {settings.upload_dir}")
     logger.info("[APP] ==============================================")
 
+    # ---- 初始化 LangFuse 可观测性 ----
+    from src.utils.tracing import init_langfuse, shutdown_langfuse
+
+    langfuse_client = init_langfuse()
+    app.state.langfuse = langfuse_client  # 可能为 None（降级）
+
+    # ---- 创建共享 Redis 连接 ----
+    redis_client = redis_lib.Redis(
+        host=settings.redis_host,
+        port=settings.redis_port,
+        db=settings.redis_db,
+        decode_responses=True,
+    )
+    app.state.redis = redis_client
+    # 注入到 redis_client 工具模块，使 API 路由不需要每次都新建连接
+    from src.utils.redis_client import set_shared_redis
+
+    set_shared_redis(redis_client)
+    logger.info("[APP] Redis 共享连接已就绪")
+
+    # ---- 创建共享 Qdrant 客户端 ----
+    qdrant_client = QdrantClient(
+        host=settings.qdrant_host,
+        port=settings.qdrant_port,
+        prefer_grpc=False,
+    )
+    app.state.qdrant = qdrant_client
+    from src.indexing.vector_client import set_shared_qdrant_client
+
+    set_shared_qdrant_client(qdrant_client)
+    logger.info("[APP] Qdrant 共享客户端已就绪")
+
     # 生产环境顺延：asyncpg 数据库连接池（见 PROGRESS.md「生产环境部署规划」）
-    # TODO M5: 在这里初始化 LangFuse tracer
+
     yield  # ← 服务在这里运行
+
     # ============================================================
     # 关闭阶段
     # ============================================================
     logger.info(f"[APP] ========== {settings.app_name} 关闭 ==========")
-    # TODO M1: 在这里关闭数据库连接池
+
+    # ---- 刷新 LangFuse 缓冲区 ----
+    shutdown_langfuse()
+
+    # ---- 关闭 Redis 连接池 ----
+    if hasattr(app.state, "redis") and app.state.redis:
+        try:
+            app.state.redis.close()
+            logger.info("[APP] Redis 连接池已关闭")
+        except Exception as e:
+            logger.warning(f"[APP] Redis 关闭异常: {e}")
+
+    # ---- 关闭 Qdrant 客户端 ----
+    if hasattr(app.state, "qdrant") and app.state.qdrant:
+        try:
+            app.state.qdrant.close()
+            logger.info("[APP] Qdrant 客户端已关闭")
+        except Exception as e:
+            logger.warning(f"[APP] Qdrant 关闭异常: {e}")
 
 
 # ============================================================

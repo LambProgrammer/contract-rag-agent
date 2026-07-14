@@ -48,6 +48,20 @@ from src.chunkers.legal_chunker import Chunk
 
 logger = logging.getLogger(__name__)
 
+# 共享客户端（由 FastAPI lifespan 注入，Worker 进程保持 None）
+_shared_qdrant_client: "QdrantClient | None" = None
+
+
+def set_shared_qdrant_client(client: "QdrantClient") -> None:
+    """
+    注入全局共享 QdrantClient。
+
+    由 FastAPI lifespan startup 调用。Worker 进程不调用此函数，
+    因此 _shared_qdrant_client 在 Worker 中保持 None，QdrantVectorClient 自建连接。
+    """
+    global _shared_qdrant_client
+    _shared_qdrant_client = client
+
 
 class QdrantVectorClient:
     """
@@ -58,12 +72,15 @@ class QdrantVectorClient:
     """
 
     def __init__(self) -> None:
-        self._client = QdrantClient(
-            host=settings.qdrant_host,
-            port=settings.qdrant_port,
-            # 使用 HTTP 协议（而非 gRPC），更简单、兼容性更好
-            prefer_grpc=False,
-        )
+        if _shared_qdrant_client is not None:
+            self._client = _shared_qdrant_client
+        else:
+            self._client = QdrantClient(
+                host=settings.qdrant_host,
+                port=settings.qdrant_port,
+                # 使用 HTTP 协议（而非 gRPC），更简单、兼容性更好
+                prefer_grpc=False,
+            )
         self._collection_name = settings.qdrant_collection_name
 
     # ----------------------------------------------------------

@@ -213,3 +213,13 @@ class Settings:
 # 全局单例 — 整个应用共享一个配置实例
 # 导入方式：from src.core.config import settings
 settings = Settings()
+
+# ---- 将 LangFuse 配置同步到环境变量 ----
+# langfuse SDK 的 @observe() 装饰器在 import 时读取环境变量，
+# 而非从 Langfuse() 构造函数参数。因此必须在此处回写。
+if settings.langfuse_public_key:
+    os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
+if settings.langfuse_secret_key:
+    os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
+if settings.langfuse_host:
+    os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)

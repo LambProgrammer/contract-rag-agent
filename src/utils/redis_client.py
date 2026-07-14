@@ -39,9 +39,30 @@ HISTORY_TTL = 3600
 # Redis key 前缀
 KEY_PREFIX = "chat:"
 
+# 共享连接（由 FastAPI lifespan 注入，Worker 进程保持 None）
+_shared_redis: "redis.Redis | None" = None
+
+
+def set_shared_redis(client: "redis.Redis") -> None:
+    """
+    注入全局共享 Redis 连接。
+
+    由 FastAPI lifespan startup 调用。Worker 进程不调用此函数，
+    因此 _shared_redis 在 Worker 中保持 None，_get_redis() 会自建连接。
+    """
+    global _shared_redis
+    _shared_redis = client
+
 
 def _get_redis() -> redis.Redis:
-    """获取 Redis 连接（每次调用新建，避免连接池在 ForkPool 中的问题）"""
+    """
+    获取 Redis 连接。
+
+    优先使用 lifespan 注入的共享连接（FastAPI 进程），
+    无共享连接时自建（Worker 进程 / 无 lifespan 的上下文）。
+    """
+    if _shared_redis is not None:
+        return _shared_redis
     return redis.Redis(
         host=settings.redis_host,
         port=settings.redis_port,

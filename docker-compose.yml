@@ -1,14 +1,8 @@
 # ============================================================
 # Contract RAG Agent — Docker Compose 编排
 #
-# 基础启动（不含 LangFuse）：
-#   docker compose up -d
-#
-# 包含 LangFuse 可观测性：
-#   docker compose --profile langfuse up -d
-#
-# 停止所有服务：
-#   docker compose down -v
+#   docker compose up -d       # 启动所有服务
+#   docker compose down -v       # 停止并删除数据卷
 # ============================================================
 
 
@@ -28,7 +22,6 @@ services:
       - POSTGRES_HOST=postgres
       - REDIS_HOST=redis
       - QDRANT_HOST=qdrant
-      - LANGFUSE_HOST=http://langfuse-server:3000
     volumes:
       - ./uploads:/app/uploads
       - ./src:/app/src          # 开发期热重载，生产部署应去掉
@@ -40,6 +33,11 @@ services:
       qdrant:
         condition: service_started
     command: uv run uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   # ============================================================
@@ -54,7 +52,6 @@ services:
       - POSTGRES_HOST=postgres
       - REDIS_HOST=redis
       - QDRANT_HOST=qdrant
-      - LANGFUSE_HOST=http://langfuse-server:3000
     volumes:
       - ./uploads:/app/uploads
       - ./src:/app/src
@@ -66,6 +63,12 @@ services:
       qdrant:
         condition: service_started
     command: uv run celery -A src.tasks.celery_app worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-4}
+    healthcheck:
+      test: ["CMD", "uv", "run", "celery", "-A", "src.tasks.celery_app", "inspect", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s  # Worker 启动较慢，给 30s 预热
     restart: unless-stopped
 
   # ============================================================
@@ -117,27 +120,6 @@ services:
       - "6334:6334"             # gRPC（备用）
     volumes:
       - qdrant_data:/qdrant/storage
-    restart: unless-stopped
-
-  # ============================================================
-  # 6. LangFuse 可观测性（自托管，可选）
-  # ============================================================
-  langfuse-server:
-    image: langfuse/langfuse:latest
-    container_name: contract-rag-langfuse
-    ports:
-      - "3000:3000"
-    environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-contract_rag}_langfuse
-      - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET:-change-me-in-production}
-      - NEXTAUTH_URL=http://localhost:3000
-      - SALT=${LANGFUSE_SALT:-change-me-in-production}
-      - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY:-change-me-in-production}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    profiles:
-      - langfuse                # 需通过 docker compose --profile langfuse up 启动
     restart: unless-stopped
 
 # ============================================================
