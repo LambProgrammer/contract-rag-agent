@@ -52,8 +52,9 @@ def init_langfuse() -> Langfuse | None:
             "[LangFuse] 未配置 LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY，"
             "可观测性功能不可用。如需启用：\n"
             "  1. 在 .env 中配置 LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY\n"
-            "  2. 启动 LangFuse 容器：docker compose --profile langfuse up -d\n"
-            "  3. 访问 http://localhost:3000 创建 API Keys"
+            "  2. 本项目使用 LangFuse Cloud（https://cloud.langfuse.com）"
+            "——自托管方案因依赖冲突已放弃，见 docs/PROGRESS.md Bug 9\n"
+            "  3. 在 Cloud 项目的 Settings → API Keys 中创建密钥"
         )
         return None
 

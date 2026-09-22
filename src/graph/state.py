@@ -12,17 +12,21 @@ LangGraph 状态定义（RAG State）
     Pydantic 也可以，但 TypedDict 更轻量（无需额外依赖），
     且与 Python 的类型标注体系天然兼容。
 
-M2 的 state 只有 3 个字段，M3 将扩展：
-    - rewritten_query: str            # 查询改写后的版本
-    - confidence: float               # 置信度（用于判断是否回退）
-    - reranked_docs: List[...]        # 重排序后的结果
+RAGState 的 7 个字段：
+    query / session_id / history / doc_id  — 由 API 层写入（history 从 Redis 读出）
+    rewritten_query                        — _rewrite_node 产出，供检索使用
+    retrieved_docs                         — _retrieve_node 召回，_rerank_node 原地覆盖
+    answer                                 — _generate_node 产出，或空结果时由回退分支写入
+
+注意：早期规划中的 confidence 字段最终没有落地。M3 验证发现 cross-encoder
+得分是"相对最优排名"而非"绝对相关度"，无法充当门控阈值（详见 graph_builder.py
+中 _check_confidence_node 的说明），最终改为在检索预检阶段判空回退。
 
 状态在各个节点之间的流转：
-    START → retrieve_node → generate_node → END
-             │                 │
-             │ 读取 query       │ 读取 retrieved_docs
-             │ 写入 docs        │ 读取 query
-             │                  │ 写入 answer
+    rewrite → retrieve → rerank → check → generate → END
+                 │          │        └ 判 retrieved_docs 是否为空
+                 │          └ 原地覆盖 retrieved_docs
+                 └ 写入 retrieved_docs（rewrite 阶段写入 rewritten_query）
 
 用法：
     from src.graph.state import RAGState

@@ -46,5 +46,8 @@ logs/
 *.db
 *.sqlite3
 
+# AI 协作笔记 / 面试准备（仅本地使用，不提交到远端仓库）
+memory/
+
 # Misc
 *.pid

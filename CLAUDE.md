@@ -67,13 +67,13 @@
 |------|------|------|
 | API 框架 | FastAPI (>=0.115) | 使用异步路由 |
 | Agent 编排 | LangGraph (>=0.2.0) + LangChain | 状态机定义在 `src/graph/` |
-| LLM | DeepSeek API | 使用 `deepseek-chat` |
+| LLM | DeepSeek API | 主链路 `deepseek-v4-pro` / Ragas 评判 `deepseek-chat` |
 | 向量库 | Qdrant (>=1.12) | **必须启用混合检索**（稠密+稀疏） |
 | 文档解析 | Docling + Unstructured 回退 | 优先 Docling |
 | 任务队列 | Celery + Redis | 任务定义在 `src/tasks/` |
 | 主数据库 | PostgreSQL 15+ | 连接使用 asyncpg |
 | 评估 | Ragas (>=0.2.0) | 测试集在 `tests/eval/` |
-| 可观测性 | LangFuse（自托管） | 使用 `@observe()` 追踪关键函数 |
+| 可观测性 | LangFuse Cloud | 使用 `@observe()` 追踪关键函数（原计划自托管，因依赖冲突放弃） |
 | Embedding 模型 | BAAI/bge-small-zh-v1.5 | sentence-transformers 加载，102M 参数量 |
 
 ---

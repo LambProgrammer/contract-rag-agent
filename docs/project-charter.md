@@ -23,7 +23,7 @@
 |------|------|-------------|
 | API 框架 | FastAPI | ≥0.115 |
 | Agent 编排 | LangGraph + LangChain | ≥0.2 / ≥0.3 |
-| LLM | DeepSeek API | `deepseek-chat` |
+| LLM | DeepSeek API | `deepseek-v4-pro`（主链路）/ `deepseek-chat`（Ragas 评判） |
 | 向量数据库 | Qdrant（混合检索） | ≥1.12 |
 | 文档解析 | Docling + Unstructured | 最新 |
 | RAG 评估 | Ragas | ≥0.2 |
@@ -43,7 +43,7 @@
 | 0. 初始化 | 0.5天 | 环境、docker-compose、配置 | 根目录：`pyproject.toml`, `.env`, `docker-compose.yml`, `scripts/` |
 | 1. 上传 + 解析 | 2天 | 上传 → 解析 → 分块 → 索引 | `src/api/upload/`, `src/tasks/`, `src/parsers/`, `src/chunkers/`, `src/indexing/` |
 | 2. 基础 RAG 问答 | 3天 | 单路检索 + 生成 | `src/graph/`（初版）, `src/retrieval/`（稠密向量） |
-| 3. 核心优化 | 3-4天 | 混合检索 + 重排序 + 流式响应 | `src/retrieval/`（完整版）, `src/graph/nodes.py`（增加改写/回退） |
+| 3. 核心优化 | 3-4天 | 混合检索 + 重排序 + 流式响应 | `src/retrieval/`（完整版）, `src/graph/graph_builder.py`（增加改写/回退） |
 | 4. 特色功能 | 2-3天 | 风险检测 + 跨合同比对 | `src/risk/`, `src/comparator/`, `config/risk_rules.yaml` |
 > M4 范围边界：
 > - 风险检测与跨合同比对接口暂为同步模式，异步化改造（Celery）规划于 M5 工程化阶段实施
@@ -68,8 +68,8 @@
 | 阶段 | 优化手段 | 实现位置 |
 |------|----------|----------|
 | 选型阶段 | 混合检索（稠密+稀疏）、结构化分块、可观测性、异步任务 | `vector_client.py`, `legal_chunker.py`, `tracing.py`, `tasks/` |
-| 核心开发 | 查询改写、多路召回、重排序、置信度回退、流式响应、风险规则引擎、跨合同比对 | `retrieval/`, `graph/nodes.py`, `api/routes_qa.py`, `risk/`, `comparator/` |
-| 工程化 | 语义缓存、任务监控、自动化评估、Bad Case 分析、分块调参 | `redis_client.py`, Celery Flower, `tests/eval/`, LangFuse, `config/chunk_experiments.yaml` |
+| 核心开发 | 查询改写、多路召回、重排序、空结果回退、流式响应、风险规则引擎、跨合同比对 | `retrieval/`, `graph/graph_builder.py`, `api/qa.py`, `risk/`, `comparator/` |
+| 工程化 | 语义缓存、任务监控、自动化评估、Bad Case 分析、分块调参 | `redis_client.py`, Celery Flower, `tests/eval/`, LangFuse |
 
 ---
 

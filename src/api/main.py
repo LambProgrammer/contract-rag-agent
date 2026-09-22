@@ -169,19 +169,26 @@ async def health_check():
 @app.get("/health/ready", tags=["系统"])
 async def readiness_check():
     """
-    就绪检查端点 — 检查所有外部依赖是否可达。
+    就绪检查端点 — 当前为**占位实现**，尚未检查外部依赖连通性。
 
-    与 /health 的区别：
+    现状说明：
+        三个依赖项固定返回 "pending"，不做任何实际探测。这是有意为之：
+        当前项目以 `uv run` + `docker compose` 本地运行，没有 K8s 之类的
+        编排系统会消费就绪探针，因此按 docs/PROGRESS.md「M5 待办优化项」
+        的结论跳过（该项标记为 ⏭️）。
+        容器健康检查统一使用 /health（存活探针，见 docker-compose.yml）。
+
+    与 /health 的区别（如后续补齐探测）：
         - /health 只确认进程在跑（存活探针）
-        - /health/ready 确认可以接流量（就绪探针：DB、Redis、Qdrant 都通）
+        - /health/ready 应确认可以接流量（就绪探针：DB、Redis、Qdrant 都通）
     """
-    # TODO M1: 添加 DB/Redis/Qdrant 连通性检查
+    # 有意未实现依赖探测，原因见上方 docstring（非待办事项）
     return {
         "status": "ready",
         "checks": {
-            "postgres": "pending",  # M1 实现
-            "redis": "pending",  # M1 实现
-            "qdrant": "pending",  # M1 实现
+            "postgres": "pending",  # 未实现（有意跳过）
+            "redis": "pending",  # 未实现（有意跳过）
+            "qdrant": "pending",  # 未实现（有意跳过）
         },
     }
 

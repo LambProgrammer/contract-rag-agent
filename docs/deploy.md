@@ -13,9 +13,12 @@ docker compose up -d
     └── volumes:
         ├── postgres_data                数据库持久化
         ├── redis_data                   缓存持久化
-        ├── qdrant_data                  向量索引持久化
-        └── hf_cache                     HuggingFace 模型缓存（BGE ~400MB）
+        └── qdrant_data                  向量索引持久化
 ```
+
+> **HuggingFace 模型不走 Docker 卷**：BGE（~400MB）与 Cross-Encoder（~80MB）合计约 480MB，
+> 由 Dockerfile 构建阶段预下载并 `COPY` 进镜像，运行时零联网依赖（见下方「HuggingFace 模型下载策略」）。
+> ⚠️ 不要改用卷挂载——空卷会覆盖镜像内已预装的模型目录，导致模型加载失败（Bug 13 即此问题）。
 
 ---
 
@@ -100,9 +103,12 @@ docker compose build --build-arg HF_MIRROR=https://hf-mirror.com
 
 代价：镜像体积增加 ~480MB。**这是当前项目采用的方案。**
 
-### 策略 2：HF 缓存卷挂载（开发备选）
+### 策略 2：HF 缓存卷挂载（已废弃）
 
-`docker-compose.yml` 中配置了 `hf_cache` 卷，挂载到容器的 `/root/.cache/huggingface`。首次下载后持久化，重建容器不需重新下载。适用于策略 1 未启用时的开发场景。
+早期版本曾在 `docker-compose.yml` 中配置 `hf_cache` 卷，挂载到容器内的 `/root/.cache/huggingface`。
+**该方案已移除**：Docker 卷挂载会完全覆盖镜像中该路径的原有内容，空卷把 Dockerfile 预装的
+模型目录盖掉了，导致 Cross-Encoder 运行时下载失败（详见 `docs/PROGRESS.md` Bug 13）。
+当前统一采用策略 1（Dockerfile 预装）。如后续仍需挂载缓存卷，务必确保卷内已有模型文件。
 
 ### 策略 3：国内镜像源（本地开发备选）
 

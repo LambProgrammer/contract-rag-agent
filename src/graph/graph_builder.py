@@ -10,10 +10,12 @@ LangGraph 图构建器
     三个理由，对应 M3 的三个扩展点：
 
     1. 可插拔节点：M3 加查询改写节点，只需 add_node + 改边，不改现有代码
-       retrieve → rewrite → retrieve → generate
+       原为 retrieve → generate，加入 rewrite 后变为 rewrite → retrieve → generate
 
-    2. 条件分支：M3 加置信度判断，低置信度走回退路径
-       if confidence < 0.7: goto fallback  else: goto generate
+    2. 条件分支：M3 加"检索结果为空"的判断，为空则跳过生成、直接走回退
+       if not retrieved_docs: goto END  else: goto generate
+       （早期曾规划用 cross-encoder 置信度阈值做门控，M3 验证证明其不成立，
+         详见 _check_confidence_node 的说明）
 
     3. 可观测性：每个节点的输入/输出都被 LangGraph 自动记录，
        结合 LangFuse（M5）可以可视化追踪每次检索和生成的质量
@@ -21,10 +23,9 @@ LangGraph 图构建器
 M2 的图结构（最简单的线性流程）：
     START → retrieve_node → generate_node → END
 
-M3 的图结构（示例，届时实现）：
-    START → rewrite_node → retrieve_node → rerank_node → generate_node → END
-                          ↑                                  │
-                          └──── fallback_node ←──────────────┘ (低置信度)
+M3 的最终图结构：
+    START → rewrite → retrieve → rerank → check ─[docs 非空]→ generate → END
+                                                └[docs 为空]→ END（回退文本已写入 answer）
 
 用法：
     from src.graph.graph_builder import build_rag_graph
